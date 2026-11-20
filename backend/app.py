@@ -8,7 +8,7 @@ from flask import Flask, jsonify, request
 
 load_dotenv()
 
-GROQ_URL = "https:api.groq.com/openai/v1"
+GROQ_URL = "https://api.groq.com/openai/v1"
 GROQ_KEY = os.environ.get("GROQ_API_KEY")
 WHISPER_MODEL = "whisper-large-v3"
 PHANTOM_TEXTS = ["you", "thank you", "thanks for watching"]
@@ -49,7 +49,9 @@ def transcribe():
             data={"model": WHISPER_MODEL, "response_format": "json"},
             timeout=60, 
         )
-    except requests.exceptions.RequestException:
+        
+    except requests.exceptions.RequestException as error:
+        print("Groq call failed:", error)
         return jsonify({"error": "Could not reach the speech service. You can type the entry instead."}), 502
 
     if reply.status_code == 429:
