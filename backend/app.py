@@ -55,7 +55,7 @@ def to_number(word):
         number = float(word) * multiplier
     except ValueError:
         return None
-    if number > 1000000000
+    if number > 1000000000:
         return None
     return tidy(number)
 
@@ -115,6 +115,46 @@ def simple_parse(text):
 
     return make_entry(entry_type, item, quantity, unit_price, "", paid)
 
+def clean_entry(data):
+    entry_type = str(data.get("type", "")).lower()
+    if entry_type not in ["sale", "purchase", "expense"]:
+        return None
+    try:
+        quantity = float(data.get("quantity", 1))
+        unit_price = float(data.get("unit_price", 0))
+    except (TypeError, ValueError):
+        return None
+    if not (0 < quantity <= 1000000 and 0 < unit_price <= 1000000000):
+        return None
+    item = str(data.get("item", "")).strip().lower() or "item"
+    customer = str(data.get("customer", "") or "").strip()
+    paid = data.get("paid", True) is not False
+    return make_entry(entry_type, item, tidy(quantity), tidy(unit_price), customer, paid)
+
+
+def ai_parse(text):
+    body = {
+        "model": CHAT_MODEL,
+        "temperature": 0,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": text},
+        ],
+    }
+    reply = requests.post(
+        GROQ_URL + "/chat/completions",
+        headers={"Authorization": "Bearer " + GROQ_KEY},
+        json=body,
+        timeout=30,
+    )
+    reply.raise_for_status()
+    content = reply.json()["choices"][0]["message"]["content"]
+    data = json.loads(content)
+    if not isinstance(data, dict):
+        return None
+    return clean_entry(data)
+
 @app.route("/api/health")
 def health():
     return jsonify({
@@ -166,6 +206,34 @@ def transcribe():
 
     return jsonify({"text": text})
 
+
+@app.route("/api/parse", methods=["POST"])
+def parse():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
+    text = str(data.get("text", "")).strip()
+    if text == "":
+        return jsonify({"error": "Please say or type what happened."}), 400
+    if len(text) > 500:
+        return jsonify({"error": "That is too long. Please keep it to one sale or expense."}), 400
+
+    entry = None
+    source = "ai"
+    if GROQ_KEY:
+        try:
+            entry = ai_parse(text)
+        except (requests.exceptions.RequestException, ValueError, KeyError, IndexError) as error:
+            print("AI parse failed:", error)
+
+    if entry is None:
+        entry = simple_parse(text)
+        source = "backup"
+
+    if entry is None:
+        return jsonify({"error": "I could not understand that. Try: I sold 3 crates of eggs at 4500 each."}), 422
+
+    return jsonify({"entry": entry, "source": source})
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
