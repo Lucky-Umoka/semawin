@@ -16,6 +16,87 @@ PHANTOM_TEXTS = ["you", "thank you", "thanks for watching"]
 app = Flask(__name__)
 app.config["Max_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
+UNIT_WORDS = ["crate", "crates", "bag", "bags", "kg", "tray", "trays",
+              "bottle", "bottles", "piece", "pieces", "pcs"]
+SKIP_WORDS = UNIT_WORDS + ["of", "for", "at", "on", "the", "a", "an", "each"]
+SALE_WORDS = ["sold", "sell", "sale"]
+PURCHASE_WORDS = ["bought", "buy", "purchased", "restocked", "restock"]
+EXPENSE_WORDS = ["paid", "spent", "expense", "pay"]
+CREDIT_WORDS = ["credit", "owes", "owed", "later"]
+
+
+def to_number(word):
+    word = word.replace(",", "")
+    multiplier = 1
+    if word.lower().endswith("k"):
+        multiplier = 1000
+        word = word[:-1]
+    if word == "" or not word[0].isdigit():
+        return None
+    try:
+        number = float(word) * multiplier
+    except ValueError:
+        return None
+    if number == int(number):
+        return int(number)
+    return number
+
+
+def make_entry(entry_type, item, quantity, unit_price, customer, paid):
+    return {
+        "type": entry_type,
+        "item": item,
+        "quantity": quantity,
+        "unit_price": unit_price,
+        "total": round(quantity * unit_price, 2),
+        "customer": customer,
+        "paid": paid,
+    }
+
+
+def simple_parse(text):
+    words = [w.strip(".,!?") for w in text.split()]
+    lowered = [w.lower() for w in words]
+
+    entry_type = None
+    if any(w in SALE_WORDS for w in lowered):
+        entry_type = "sale"
+    elif any(w in PURCHASE_WORDS for w in lowered):
+        entry_type = "purchase"
+    elif any(w in EXPENSE_WORDS for w in lowered):
+        entry_type = "expense"
+    if entry_type is None:
+        return None
+
+    numbers = []
+    for position, word in enumerate(words):
+        value = to_number(word)
+        if value is not None:
+            numbers.append((position, value))
+    if len(numbers) == 0:
+        return None
+
+    if len(numbers) >= 2:
+        quantity = numbers[0][1]
+        unit_price = numbers[1][1]
+    else:
+        quantity = 1
+        unit_price = numbers[0][1]
+
+    item = "item"
+    for word in lowered[numbers[0][0] + 1:]:
+        if word in SKIP_WORDS or to_number(word) is not None:
+            continue
+        item = word
+        break
+
+    paid = True
+    for word in lowered:
+        if word in CREDIT_WORDS:
+            paid = False
+
+    return make_entry(entry_type, item, quantity, unit_price, "", paid)
+
 @app.route("/api/health")
 def health():
     return jsonify({
