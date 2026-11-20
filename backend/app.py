@@ -1,5 +1,6 @@
 import os
 import socket
+import json
 
 import requests
 from dotenv import load_dotenv
@@ -11,6 +12,18 @@ load_dotenv()
 GROQ_URL = "https://api.groq.com/openai/v1"
 GROQ_KEY = os.environ.get("GROQ_API_KEY")
 WHISPER_MODEL = "whisper-large-v3"
+CHAT_MODEL = "openai/gpt-oss-20b"
+SYSTEM_PROMPT = (
+    "You read what a small shop owner said and turn it into one ledger entry. "
+    "Reply with JSON only, using exactly these keys: "
+    "type (sale, purchase or expense), item (a short lowercase name), "
+    "quantity (a number), unit_price (a number), customer (a name, or empty text) "
+    "and paid (true or false). "
+    "A purchase is stock bought for the shop. An expense is money spent on something else, "
+    "like transport or rent; for an expense use quantity 1 and put the amount in unit_price. "
+    "Set paid to false only if a customer took goods on credit and has not paid yet. "
+    "Write money as plain numbers: 3k means 3000. Leave out currency signs."
+)
 PHANTOM_TEXTS = ["you", "thank you", "thanks for watching"]
 
 app = Flask(__name__)
@@ -23,6 +36,11 @@ SALE_WORDS = ["sold", "sell", "sale"]
 PURCHASE_WORDS = ["bought", "buy", "purchased", "restocked", "restock"]
 EXPENSE_WORDS = ["paid", "spent", "expense", "pay"]
 CREDIT_WORDS = ["credit", "owes", "owed", "later"]
+
+def tidy(number):
+    if number == int(number):
+        return int(number)
+    return round(number, 2)
 
 
 def to_number(word):
@@ -37,9 +55,9 @@ def to_number(word):
         number = float(word) * multiplier
     except ValueError:
         return None
-    if number == int(number):
-        return int(number)
-    return number
+    if number > 1000000000
+        return None
+    return tidy(number)
 
 
 def make_entry(entry_type, item, quantity, unit_price, customer, paid):
