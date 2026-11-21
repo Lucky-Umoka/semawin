@@ -219,6 +219,111 @@ cancelEntryButton.addEventListener("click", function () {
   setStatus("", false);
 });
 
+let recorder = null;
+let recordedChunks = [];
+let stopTimer = null;
+
+function pickMimeType() {
+  const options = ["audio/webm", "audio/mp4", "audio/ogg"];
+  for (const type of options) {
+    if (MediaRecorder.isTypeSupported(type)) {
+      return type;
+    }
+  }
+  return "";
+}
+
+async function startRecording() {
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    setStatus("Voice needs a secure page (https) and a modern browser. Please type your entry instead.", true);
+    return;
+  }
+
+  recordButton.disabled = true;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (error) {
+    recordButton.disabled = false;
+    setStatus("The microphone is blocked. Allow it in your browser, or type your entry.", true);
+    return;
+  }
+  recordButton.disabled = false;
+
+  const mimeType = pickMimeType();
+  if (mimeType) {
+    recorder = new MediaRecorder(stream, { mimeType: mimeType });
+  } else {
+    recorder = new MediaRecorder(stream);
+  }
+  recordedChunks = [];
+
+  recorder.addEventListener("dataavailable", function (event) {
+    if (event.data.size > 0) {
+      recordedChunks.push(event.data);
+    }
+  });
+
+  recorder.addEventListener("stop", function () {
+    stream.getTracks().forEach(function (track) {
+      track.stop();
+    });
+    sendRecording(recorder.mimeType);
+  });
+
+  recorder.start();
+  recordButton.textContent = "Stop";
+  recordButton.classList.add("recording");
+  setStatus("Listening... press Stop when you finish.", false);
+  stopTimer = setTimeout(stopRecording, 30000);
+}
+
+function stopRecording() {
+  clearTimeout(stopTimer);
+  if (recorder && recorder.state === "recording") {
+    recorder.stop();
+  }
+  recordButton.textContent = "Record";
+  recordButton.classList.remove("recording");
+}
+
+async function sendRecording(mimeType) {
+  const type = mimeType || "audio/webm";
+  const extension = type.split("/")[1].split(";")[0];
+  const blob = new Blob(recordedChunks, { type: type });
+  const formData = new FormData();
+  formData.append("audio", blob, "voice." + extension);
+
+  recordButton.disabled = true;
+  setStatus("Listening to your recording...", false);
+  try {
+    const response = await fetch("/api/transcribe", { method: "POST", body: formData });
+    const servedBy = response.headers.get("X-Served-By");
+    if (servedBy) {
+      serverName.textContent = servedBy;
+    }
+    const data = await response.json();
+    if (!response.ok) {
+      setStatus(data.error || "Something went wrong.", true);
+    } else {
+      entryText.value = data.text;
+      parseButton.click();
+    }
+  } catch (error) {
+    setStatus("Could not reach the server. You can type your entry instead.", true);
+  }
+  recordButton.disabled = false;
+}
+
+recordButton.addEventListener("click", function () {
+  if (recorder && recorder.state === "recording") {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+});
+
+
 
 loadData();
 showScreen();
