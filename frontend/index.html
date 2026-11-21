@@ -1,1 +1,150 @@
-<h1>Semawin</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Semawin - speak your sales, know your profit</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Semawin</h1>
+    <p>Speak your sales. Know your profit.</p>
+  </header>
+
+  <main>
+    <section id="setup-section" class="card">
+      <h2>Set up your shop</h2>
+      <label for="business-name">Shop name</label>
+      <input type="text" id="business-name" placeholder="e.g. Mama Ngozi Eggs">
+      <label for="currency">Currency</label>
+      <select id="currency">
+        <option value="RWF">Rwanda (RWF)</option>
+        <option value="UGX">Uganda (UGX)</option>
+        <option value="KES">Kenya (KES)</option>
+        <option value="NGN">Nigeria (NGN)</option>
+        <option value="GHS">Ghana (GHS)</option>
+      </select>
+      <button id="save-setup">Start</button>
+    </section>
+
+    <div id="app-section">
+      <section class="card">
+        <h2 id="shop-title">My shop</h2>
+        <p>Press Record and say what happened, or type it. Example: I sold 3 crates of eggs at 4500 each.</p>
+        <textarea id="entry-text" rows="3" placeholder="I sold 3 crates of eggs at 4500 each"></textarea>
+        <div class="button-row">
+          <button id="record-button">Record</button>
+          <button id="parse-button">Add entry</button>
+        </div>
+        <p id="status-message" class="status"></p>
+      </section>
+
+      <section id="confirm-section" class="card" hidden>
+        <h2>Is this right?</h2>
+        <p id="source-note" class="status"></p>
+        <div class="form-grid">
+          <label>Type
+            <select id="confirm-type">
+              <option value="sale">Sale</option>
+              <option value="purchase">Purchase (stock)</option>
+              <option value="expense">Expense</option>
+            </select>
+          </label>
+          <label>Item
+            <input type="text" id="confirm-item">
+          </label>
+          <label>Quantity
+            <input type="number" id="confirm-quantity" min="0" step="any">
+          </label>
+          <label>Price each
+            <input type="number" id="confirm-price" min="0" step="any">
+          </label>
+          <label>Customer (if owed)
+            <input type="text" id="confirm-customer">
+          </label>
+          <label class="check-label">
+            <input type="checkbox" id="confirm-paid"> Paid
+          </label>
+        </div>
+        <p>Total: <strong id="confirm-total">0</strong></p>
+        <div class="button-row">
+          <button id="save-entry">Save</button>
+          <button id="cancel-entry" class="secondary">Cancel</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Summary</h2>
+        <div class="summary-grid">
+          <div class="summary-box"><span>Revenue</span><strong id="sum-revenue">0</strong></div>
+          <div class="summary-box"><span>Cost of goods</span><strong id="sum-cogs">0</strong></div>
+          <div class="summary-box"><span>Gross profit</span><strong id="sum-gross">0</strong></div>
+          <div class="summary-box"><span>Expenses</span><strong id="sum-expenses">0</strong></div>
+          <div class="summary-box"><span>Net profit</span><strong id="sum-net">0</strong></div>
+          <div class="summary-box"><span>Owed to you</span><strong id="sum-owed">0</strong></div>
+        </div>
+        <p id="cost-warning" class="warning" hidden></p>
+      </section>
+
+      <section class="card">
+        <h2>Who owes me</h2>
+        <ul id="owed-list"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Profit by item</h2>
+        <div id="item-profit"></div>
+      </section>
+
+      <section class="card">
+        <h2>Ledger</h2>
+        <div class="filter-row">
+          <input type="text" id="search-box" placeholder="Search item or customer">
+          <select id="filter-type">
+            <option value="all">All types</option>
+            <option value="sale">Sales</option>
+            <option value="purchase">Purchases</option>
+            <option value="expense">Expenses</option>
+          </select>
+          <select id="filter-paid">
+            <option value="all">Paid and owed</option>
+            <option value="paid">Paid only</option>
+            <option value="owed">Owed only</option>
+          </select>
+          <select id="sort-by">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="biggest">Biggest total</option>
+            <option value="item">Item A to Z</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th><th>Type</th><th>Item</th><th>Qty</th>
+                <th>Price</th><th>Total</th><th>Customer</th><th>Status</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="ledger-body"></tbody>
+          </table>
+        </div>
+        <p id="empty-message" hidden>No entries yet. Add your first one above.</p>
+        <div class="button-row">
+          <button id="export-button" class="secondary">Download CSV</button>
+          <button id="import-button" class="secondary">Restore CSV</button>
+          <input type="file" id="import-file" accept=".csv" hidden>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <p>Your records are saved on this device. Download a CSV now and then as a backup.</p>
+    <p>Answered by server: <span id="server-name">checking...</span></p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
