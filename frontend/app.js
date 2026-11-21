@@ -44,9 +44,11 @@ function saveSettings() {
   }
 }
 
+
 function formatMoney(amount) {
   const text = Number(amount).toLocaleString("en-US", { maximumFractionDigits: 2 });
-  return text + " " + settings.currency;
+  const currency = settings ? settings.currency : "";
+  return text + " " + currency;
 }
 
 function showScreen() {
@@ -131,9 +133,151 @@ function fillConfirmCard(entry, source) {
   confirmSection.hidden = false;
 }
 
-function renderAll() {
-  console.log("Entries saved:", entries.length);
+const searchBox = byId("search-box");
+const filterType = byId("filter-type");
+const filterPaid = byId("filter-paid");
+const sortBy = byId("sort-by");
+const ledgerBody = byId("ledger-body");
+const emptyMessage = byId("empty-message");
+
+function getVisibleEntries() {
+  const searchText = searchBox.value.trim().toLowerCase();
+
+  const visible = entries.filter(function (entry) {
+    if (filterType.value !== "all" && entry.type !== filterType.value) {
+      return false;
+    }
+    if (filterPaid.value === "paid" && !entry.paid) {
+      return false;
+    }
+    if (filterPaid.value === "owed" && entry.paid) {
+      return false;
+    }
+    if (searchText !== "") {
+      const words = entry.item + " " + entry.customer;
+      if (!words.toLowerCase().includes(searchText)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  if (sortBy.value === "oldest") {
+    visible.sort(function (a, b) {
+      return a.id - b.id;
+    });
+  } else if (sortBy.value === "biggest") {
+    visible.sort(function (a, b) {
+      return b.total - a.total;
+    });
+  } else if (sortBy.value === "item") {
+    visible.sort(function (a, b) {
+      return a.item.localeCompare(b.item);
+    });
+  } else {
+    visible.sort(function (a, b) {
+      return b.id - a.id;
+    });
+  }
+  return visible;
 }
+
+function addCell(row, text) {
+  const cell = document.createElement("td");
+  cell.textContent = text;
+  row.appendChild(cell);
+}
+
+function markPaid(id) {
+  const entry = entries.find(function (item) {
+    return item.id === id;
+  });
+  if (!entry) {
+    return;
+  }
+  entry.paid = true;
+  if (!saveEntries()) {
+    entry.paid = false;
+    alert("Could not save on this device.");
+    return;
+  }
+  renderAll();
+}
+
+function deleteEntry(id) {
+  if (!confirm("Delete this entry?")) {
+    return;
+  }
+  const oldEntries = entries;
+  entries = entries.filter(function (entry) {
+    return entry.id !== id;
+  });
+  if (!saveEntries()) {
+    entries = oldEntries;
+    alert("Could not save on this device.");
+  }
+  renderAll();
+}
+
+function renderLedger() {
+  const visible = getVisibleEntries();
+  ledgerBody.textContent = "";
+
+  if (entries.length === 0) {
+    emptyMessage.textContent = "No entries yet. Add your first one above.";
+    emptyMessage.hidden = false;
+  } else if (visible.length === 0) {
+    emptyMessage.textContent = "No entries match your search or filters.";
+    emptyMessage.hidden = false;
+  } else {
+    emptyMessage.hidden = true;
+  }
+
+  visible.forEach(function (entry) {
+    const row = document.createElement("tr");
+    addCell(row, entry.date);
+    addCell(row, entry.type);
+    addCell(row, entry.item);
+    addCell(row, entry.quantity);
+    addCell(row, formatMoney(entry.unit_price));
+    addCell(row, formatMoney(entry.total));
+    addCell(row, entry.customer);
+    if (entry.type === "sale") {
+      addCell(row, entry.paid ? "Paid" : "Owed");
+    } else {
+      addCell(row, "");
+    }
+
+    const actions = document.createElement("td");
+    if (entry.type === "sale" && !entry.paid) {
+      const paidButton = document.createElement("button");
+      paidButton.textContent = "Mark paid";
+      paidButton.addEventListener("click", function () {
+        markPaid(entry.id);
+      });
+      actions.appendChild(paidButton);
+    }
+    const deleteButton = document.createElement("button");
+    deleteButton.textContent = "Delete";
+    deleteButton.className = "secondary";
+    deleteButton.addEventListener("click", function () {
+      deleteEntry(entry.id);
+    });
+    actions.appendChild(deleteButton);
+    row.appendChild(actions);
+
+    ledgerBody.appendChild(row);
+  });
+}
+
+function renderAll() {
+  renderLedger();
+}
+
+searchBox.addEventListener("input", renderLedger);
+filterType.addEventListener("change", renderLedger);
+filterPaid.addEventListener("change", renderLedger);
+sortBy.addEventListener("change", renderLedger);
 
 confirmQuantity.addEventListener("input", updateConfirmTotal);
 confirmPrice.addEventListener("input", updateConfirmTotal);
