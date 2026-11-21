@@ -4,7 +4,7 @@ import json
 
 import requests
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 
 
 load_dotenv()
@@ -27,6 +27,8 @@ SYSTEM_PROMPT = (
 PHANTOM_TEXTS = ["you", "thank you", "thanks for watching"]
 
 app = Flask(__name__)
+BASE_FOLDER = os.path.dirname(os.path.abspath(__file__))
+FRONTEND_FOLDER = os.path.abspath(os.path.join(BASE_FOLDER, "..", "frontend"))
 app.config["Max_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
 UNIT_WORDS = ["crate", "crates", "bag", "bags", "kg", "tray", "trays",
@@ -234,6 +236,34 @@ def parse():
         return jsonify({"error": "I could not understand that. Try: I sold 3 crates of eggs at 4500 each."}), 422
 
     return jsonify({"entry": entry, "source": source})
+
+@app.after_request
+def add_server_header(response):
+    response.headers["X-Served-By"] = socket.gethostname()
+    return response
+
+
+@app.errorhandler(404)
+def not_found(error):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "That address does not exist."}), 404
+    return "Page not found", 404
+
+
+@app.errorhandler(500)
+def server_error(error):
+    return jsonify({"error": "Something went wrong on the server. Please try again."}), 500
+
+
+@app.route("/")
+def home():
+    return send_from_directory(FRONTEND_FOLDER, "index.html")
+
+
+@app.route("/<path:filename>")
+def frontend_file(filename):
+    return send_from_directory(FRONTEND_FOLDER, filename)
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
