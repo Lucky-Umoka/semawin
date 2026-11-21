@@ -54,6 +54,10 @@ const sortBy = byId("sort-by");
 const ledgerBody = byId("ledger-body");
 const emptyMessage = byId("empty-message");
 
+const exportButton = byId("export-button");
+const importButton = byId("import-button");
+const importFile = byId("import-file");
+
 // ---------- saving and loading ----------
 function loadData() {
   try {
@@ -524,6 +528,170 @@ function renderAll() {
   renderLedger();
 }
 
+// ---------- CSV backup ----------
+function csvCell(value) {
+  let text = String(value);
+  if (text !== "" && "=+-@".includes(text[0])) {
+    text = "'" + text;
+  }
+  return '"' + text.split('"').join('""') + '"';
+}
+
+function cleanCell(text) {
+  if (text.length > 1 && text[0] === "'" && "=+-@".includes(text[1])) {
+    return text.slice(1);
+  }
+  return text;
+}
+
+function downloadCsv() {
+  if (entries.length === 0) {
+    alert("There is nothing to download yet.");
+    return;
+  }
+  const lines = ["date,type,item,quantity,unit_price,total,customer,paid"];
+  entries.forEach(function (entry) {
+    lines.push([
+      csvCell(entry.date),
+      csvCell(entry.type),
+      csvCell(entry.item),
+      csvCell(entry.quantity),
+      csvCell(entry.unit_price),
+      csvCell(entry.total),
+      csvCell(entry.customer),
+      csvCell(entry.paid),
+    ].join(","));
+  });
+
+  const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "semawin-ledger-" + todayText() + ".csv";
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (inQuotes) {
+      if (char === '"' && text[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (char === '"') {
+        inQuotes = false;
+      } else {
+        cell += char;
+      }
+    } else if (char === '"') {
+      inQuotes = true;
+    } else if (char === ",") {
+      row.push(cell);
+      cell = "";
+    } else if (char === "\n") {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else if (char !== "\r") {
+      cell += char;
+    }
+  }
+  if (cell !== "" || row.length > 0) {
+    row.push(cell);
+    rows.push(row);
+  }
+  return rows;
+}
+
+function importCsv(text) {
+  if (text.charCodeAt(0) === 0xfeff) {
+    text = text.slice(1);
+  }
+  const rows = parseCsv(text);
+  if (rows.length === 0 || rows[0].length !== 8 || rows[0][0] !== "date") {
+    alert("This does not look like a Semawin CSV file.");
+    return;
+  }
+
+  const imported = [];
+  let skipped = 0;
+  const startId = Date.now();
+
+  rows.slice(1).forEach(function (row) {
+    if (row.length !== 8) {
+      skipped++;
+      return;
+    }
+    const date = cleanCell(row[0]);
+    const type = cleanCell(row[1]).toLowerCase();
+    const item = cleanCell(row[2]).trim().toLowerCase();
+    const quantity = Number(row[3]);
+    const price = Number(row[4]);
+    let customer = cleanCell(row[6]).trim();
+    let paid = row[7] === "true";
+
+    const goodDate = date.length === 10 && !Number.isNaN(new Date(date).getTime());
+    const goodType = ["sale", "purchase", "expense"].includes(type);
+    const goodNumbers = quantity > 0 && quantity <= 1000000 && price > 0 && price <= 1000000000;
+    if (!goodDate || !goodType || item === "" || !goodNumbers) {
+      skipped++;
+      return;
+    }
+
+    if (type !== "sale") {
+      paid = true;
+    }
+    if (!paid && customer === "") {
+      customer = "Unknown customer";
+    }
+
+    imported.push({
+      id: startId + imported.length,
+      date: date,
+      type: type,
+      item: item,
+      quantity: quantity,
+      unit_price: price,
+      total: Math.round(quantity * price * 100) / 100,
+      customer: customer,
+      paid: paid,
+    });
+  });
+
+  if (imported.length === 0) {
+    alert("No valid rows were found in that file.");
+    return;
+  }
+  if (entries.length > 0) {
+    const ok = confirm("This replaces the " + entries.length + " entries on this device with " +
+      imported.length + " from the file. Continue?");
+    if (!ok) {
+      return;
+    }
+  }
+
+  const oldEntries = entries;
+  entries = imported;
+  if (!saveEntries()) {
+    entries = oldEntries;
+    alert("Could not save on this device.");
+    return;
+  }
+  renderAll();
+
+  let message = "Restored " + imported.length + " entries.";
+  if (skipped > 0) {
+    message += " Skipped " + skipped + " rows that were not valid.";
+  }
+  alert(message);
+}
+
 // ---------- button and input events ----------
 saveSetupButton.addEventListener("click", function () {
   const business = businessInput.value.trim();
@@ -633,6 +801,33 @@ searchBox.addEventListener("input", renderLedger);
 filterType.addEventListener("change", renderLedger);
 filterPaid.addEventListener("change", renderLedger);
 sortBy.addEventListener("change", renderLedger);
+
+exportButton.addEventListener("click", downloadCsv);
+
+importButton.addEventListener("click", function () {
+  importFile.click();
+});
+
+importFile.addEventListener("change", function () {
+  const file = importFile.files[0];
+  if (!file) {
+    return;
+  }
+  if (file.size > 1000000) {
+    alert("That file is too big.");
+    importFile.value = "";
+    return;
+  }
+  const reader = new FileReader();
+  reader.addEventListener("load", function () {
+    importCsv(String(reader.result));
+  });
+  reader.addEventListener("error", function () {
+    alert("Could not read that file.");
+  });
+  reader.readAsText(file);
+  importFile.value = "";
+});
 
 // ---------- start ----------
 loadData();
