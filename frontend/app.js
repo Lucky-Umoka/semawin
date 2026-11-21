@@ -3,11 +3,15 @@ const SETTINGS_KEY = "semawin_settings";
 
 let entries = [];
 let settings = null;
+let recorder = null;
+let recordedChunks = [];
+let stopTimer = null;
 
 function byId(id) {
   return document.getElementById(id);
 }
 
+// ---------- page elements ----------
 const setupSection = byId("setup-section");
 const appSection = byId("app-section");
 const shopTitle = byId("shop-title");
@@ -16,6 +20,41 @@ const currencySelect = byId("currency");
 const saveSetupButton = byId("save-setup");
 const serverName = byId("server-name");
 
+const entryText = byId("entry-text");
+const recordButton = byId("record-button");
+const parseButton = byId("parse-button");
+const statusMessage = byId("status-message");
+
+const confirmSection = byId("confirm-section");
+const sourceNote = byId("source-note");
+const confirmType = byId("confirm-type");
+const confirmItem = byId("confirm-item");
+const confirmQuantity = byId("confirm-quantity");
+const confirmPrice = byId("confirm-price");
+const confirmCustomer = byId("confirm-customer");
+const confirmPaid = byId("confirm-paid");
+const confirmTotal = byId("confirm-total");
+const saveEntryButton = byId("save-entry");
+const cancelEntryButton = byId("cancel-entry");
+
+const sumRevenue = byId("sum-revenue");
+const sumCogs = byId("sum-cogs");
+const sumGross = byId("sum-gross");
+const sumExpenses = byId("sum-expenses");
+const sumNet = byId("sum-net");
+const sumOwed = byId("sum-owed");
+const costWarning = byId("cost-warning");
+const owedList = byId("owed-list");
+const itemProfitBox = byId("item-profit");
+
+const searchBox = byId("search-box");
+const filterType = byId("filter-type");
+const filterPaid = byId("filter-paid");
+const sortBy = byId("sort-by");
+const ledgerBody = byId("ledger-body");
+const emptyMessage = byId("empty-message");
+
+// ---------- saving and loading ----------
 function loadData() {
   try {
     entries = JSON.parse(localStorage.getItem(ENTRIES_KEY)) || [];
@@ -44,60 +83,12 @@ function saveSettings() {
   }
 }
 
-
+// ---------- small helpers ----------
 function formatMoney(amount) {
   const text = Number(amount).toLocaleString("en-US", { maximumFractionDigits: 2 });
   const currency = settings ? settings.currency : "";
   return text + " " + currency;
 }
-
-function showScreen() {
-  if (settings === null) {
-    setupSection.hidden = false;
-    appSection.hidden = true;
-  } else {
-    setupSection.hidden = true;
-    appSection.hidden = false;
-    shopTitle.textContent = settings.business;
-  }
-}
-
-saveSetupButton.addEventListener("click", function () {
-  const business = businessInput.value.trim();
-  if (business === "") {
-    alert("Please type your shop name.");
-    return;
-  }
-  settings = { business: business, currency: currencySelect.value };
-  saveSettings();
-  showScreen();
-});
-
-async function showServerName() {
-  try {
-    const response = await fetch("/api/health");
-    const data = await response.json();
-    serverName.textContent = data.server;
-  } catch (error) {
-    serverName.textContent = "not reachable";
-  }
-}
-
-const entryText = byId("entry-text");
-const recordButton = byId("record-button");
-const parseButton = byId("parse-button");
-const statusMessage = byId("status-message");
-const confirmSection = byId("confirm-section");
-const sourceNote = byId("source-note");
-const confirmType = byId("confirm-type");
-const confirmItem = byId("confirm-item");
-const confirmQuantity = byId("confirm-quantity");
-const confirmPrice = byId("confirm-price");
-const confirmCustomer = byId("confirm-customer");
-const confirmPaid = byId("confirm-paid");
-const confirmTotal = byId("confirm-total");
-const saveEntryButton = byId("save-entry");
-const cancelEntryButton = byId("cancel-entry");
 
 function setStatus(message, isError) {
   statusMessage.textContent = message;
@@ -111,6 +102,28 @@ function todayText() {
   return now.getFullYear() + "-" + month + "-" + day;
 }
 
+function showScreen() {
+  if (settings === null) {
+    setupSection.hidden = false;
+    appSection.hidden = true;
+  } else {
+    setupSection.hidden = true;
+    appSection.hidden = false;
+    shopTitle.textContent = settings.business;
+  }
+}
+
+async function showServerName() {
+  try {
+    const response = await fetch("/api/health");
+    const data = await response.json();
+    serverName.textContent = data.server;
+  } catch (error) {
+    serverName.textContent = "not reachable";
+  }
+}
+
+// ---------- confirm card ----------
 function updateConfirmTotal() {
   const quantity = Number(confirmQuantity.value);
   const price = Number(confirmPrice.value);
@@ -133,13 +146,100 @@ function fillConfirmCard(entry, source) {
   confirmSection.hidden = false;
 }
 
-const searchBox = byId("search-box");
-const filterType = byId("filter-type");
-const filterPaid = byId("filter-paid");
-const sortBy = byId("sort-by");
-const ledgerBody = byId("ledger-body");
-const emptyMessage = byId("empty-message");
+// ---------- voice recording ----------
+function pickMimeType() {
+  const options = ["audio/webm", "audio/mp4", "audio/ogg"];
+  for (const type of options) {
+    if (MediaRecorder.isTypeSupported(type)) {
+      return type;
+    }
+  }
+  return "";
+}
 
+async function startRecording() {
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    setStatus("Voice needs a secure page (https) and a modern browser. Please type your entry instead.", true);
+    return;
+  }
+
+  recordButton.disabled = true;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (error) {
+    recordButton.disabled = false;
+    setStatus("The microphone is blocked. Allow it in your browser, or type your entry.", true);
+    return;
+  }
+  recordButton.disabled = false;
+
+  const mimeType = pickMimeType();
+  if (mimeType) {
+    recorder = new MediaRecorder(stream, { mimeType: mimeType });
+  } else {
+    recorder = new MediaRecorder(stream);
+  }
+  recordedChunks = [];
+
+  recorder.addEventListener("dataavailable", function (event) {
+    if (event.data.size > 0) {
+      recordedChunks.push(event.data);
+    }
+  });
+
+  recorder.addEventListener("stop", function () {
+    stream.getTracks().forEach(function (track) {
+      track.stop();
+    });
+    sendRecording(recorder.mimeType);
+  });
+
+  recorder.start();
+  recordButton.textContent = "Stop";
+  recordButton.classList.add("recording");
+  setStatus("Listening... press Stop when you finish.", false);
+  stopTimer = setTimeout(stopRecording, 30000);
+}
+
+function stopRecording() {
+  clearTimeout(stopTimer);
+  if (recorder && recorder.state === "recording") {
+    recorder.stop();
+  }
+  recordButton.textContent = "Record";
+  recordButton.classList.remove("recording");
+}
+
+async function sendRecording(mimeType) {
+  const type = mimeType || "audio/webm";
+  const extension = type.split("/")[1].split(";")[0];
+  const blob = new Blob(recordedChunks, { type: type });
+  const formData = new FormData();
+  formData.append("audio", blob, "voice." + extension);
+
+  recordButton.disabled = true;
+  setStatus("Listening to your recording...", false);
+  try {
+    const response = await fetch("/api/transcribe", { method: "POST", body: formData });
+    const servedBy = response.headers.get("X-Served-By");
+    if (servedBy) {
+      serverName.textContent = servedBy;
+    }
+    const data = await response.json();
+    if (!response.ok) {
+      setStatus(data.error || "Something went wrong.", true);
+    } else {
+      entryText.value = data.text;
+      parseButton.click();
+    }
+  } catch (error) {
+    setStatus("Could not reach the server. You can type your entry instead.", true);
+  }
+  recordButton.disabled = false;
+}
+
+// ---------- ledger table ----------
 function getVisibleEntries() {
   const searchText = searchBox.value.trim().toLowerCase();
 
@@ -270,14 +370,172 @@ function renderLedger() {
   });
 }
 
+// ---------- profit calculations ----------
+function itemKey(name) {
+  let key = name.trim().toLowerCase();
+  if (key.length > 3 && key.endsWith("s")) {
+    key = key.slice(0, -1);
+  }
+  return key;
+}
+
+function calculateTotals() {
+  const lastCost = new Map();
+  entries.forEach(function (entry) {
+    if (entry.type === "purchase") {
+      lastCost.set(itemKey(entry.item), entry.unit_price);
+    }
+  });
+
+  const totals = { revenue: 0, cogs: 0, gross: 0, expenses: 0, owed: 0, net: 0 };
+  const itemProfits = new Map();
+  const owedByCustomer = new Map();
+  const missingCost = [];
+
+  entries.forEach(function (entry) {
+    if (entry.type === "expense") {
+      totals.expenses += entry.total;
+    }
+    if (entry.type !== "sale") {
+      return;
+    }
+
+    totals.revenue += entry.total;
+
+    if (!entry.paid) {
+      totals.owed += entry.total;
+      const customerKey = entry.customer.toLowerCase();
+      if (!owedByCustomer.has(customerKey)) {
+        owedByCustomer.set(customerKey, { name: entry.customer, amount: 0 });
+      }
+      owedByCustomer.get(customerKey).amount += entry.total;
+    }
+
+    const key = itemKey(entry.item);
+    if (!lastCost.has(key)) {
+      if (!missingCost.includes(entry.item)) {
+        missingCost.push(entry.item);
+      }
+      return;
+    }
+
+    const cost = entry.quantity * lastCost.get(key);
+    const profit = entry.total - cost;
+    totals.cogs += cost;
+    totals.gross += profit;
+    if (!itemProfits.has(key)) {
+      itemProfits.set(key, { name: entry.item, profit: 0 });
+    }
+    itemProfits.get(key).profit += profit;
+  });
+
+  totals.net = totals.gross - totals.expenses;
+  return {
+    totals: totals,
+    itemProfits: itemProfits,
+    owedByCustomer: owedByCustomer,
+    missingCost: missingCost,
+  };
+}
+
+function renderSummary(result) {
+  const totals = result.totals;
+  sumRevenue.textContent = formatMoney(totals.revenue);
+  sumCogs.textContent = formatMoney(totals.cogs);
+  sumGross.textContent = formatMoney(totals.gross);
+  sumExpenses.textContent = formatMoney(totals.expenses);
+  sumNet.textContent = formatMoney(totals.net);
+  sumOwed.textContent = formatMoney(totals.owed);
+
+  if (result.missingCost.length > 0) {
+    costWarning.textContent = "No cost price yet for: " + result.missingCost.join(", ") +
+      ". Record what you paid for them (a purchase) so their profit can be counted.";
+    costWarning.hidden = false;
+  } else {
+    costWarning.hidden = true;
+  }
+}
+
+function renderOwed(result) {
+  owedList.textContent = "";
+  if (result.owedByCustomer.size === 0) {
+    const empty = document.createElement("li");
+    empty.textContent = "Nobody owes you right now.";
+    owedList.appendChild(empty);
+    return;
+  }
+  result.owedByCustomer.forEach(function (customer) {
+    const line = document.createElement("li");
+    line.textContent = customer.name + ": " + formatMoney(customer.amount);
+    owedList.appendChild(line);
+  });
+}
+
+function renderItemProfit(result) {
+  itemProfitBox.textContent = "";
+  const list = Array.from(result.itemProfits.values());
+
+  if (list.length === 0) {
+    const note = document.createElement("p");
+    note.textContent = "Profit per item appears after you record a purchase and a sale of the same item.";
+    itemProfitBox.appendChild(note);
+    return;
+  }
+
+  list.sort(function (a, b) {
+    return b.profit - a.profit;
+  });
+  const biggest = Math.max(...list.map(function (item) {
+    return Math.abs(item.profit);
+  }));
+
+  list.forEach(function (item) {
+    const row = document.createElement("div");
+    row.className = "bar-row";
+
+    const label = document.createElement("div");
+    label.textContent = item.name + ": " + formatMoney(item.profit);
+
+    const track = document.createElement("div");
+    track.className = "bar-track";
+    const fill = document.createElement("div");
+    fill.className = "bar-fill";
+    if (item.profit < 0) {
+      fill.classList.add("loss");
+    }
+    let percent = 0;
+    if (biggest > 0) {
+      percent = (Math.abs(item.profit) / biggest) * 100;
+    }
+    fill.style.width = percent + "%";
+
+    track.appendChild(fill);
+    row.appendChild(label);
+    row.appendChild(track);
+    itemProfitBox.appendChild(row);
+  });
+}
+
 function renderAll() {
+  const result = calculateTotals();
+  renderSummary(result);
+  renderOwed(result);
+  renderItemProfit(result);
   renderLedger();
 }
 
-searchBox.addEventListener("input", renderLedger);
-filterType.addEventListener("change", renderLedger);
-filterPaid.addEventListener("change", renderLedger);
-sortBy.addEventListener("change", renderLedger);
+// ---------- button and input events ----------
+saveSetupButton.addEventListener("click", function () {
+  const business = businessInput.value.trim();
+  if (business === "") {
+    alert("Please type your shop name.");
+    return;
+  }
+  settings = { business: business, currency: currencySelect.value };
+  saveSettings();
+  showScreen();
+  renderAll();
+});
 
 confirmQuantity.addEventListener("input", updateConfirmTotal);
 confirmPrice.addEventListener("input", updateConfirmTotal);
@@ -363,102 +621,6 @@ cancelEntryButton.addEventListener("click", function () {
   setStatus("", false);
 });
 
-let recorder = null;
-let recordedChunks = [];
-let stopTimer = null;
-
-function pickMimeType() {
-  const options = ["audio/webm", "audio/mp4", "audio/ogg"];
-  for (const type of options) {
-    if (MediaRecorder.isTypeSupported(type)) {
-      return type;
-    }
-  }
-  return "";
-}
-
-async function startRecording() {
-  if (!navigator.mediaDevices || !window.MediaRecorder) {
-    setStatus("Voice needs a secure page (https) and a modern browser. Please type your entry instead.", true);
-    return;
-  }
-
-  recordButton.disabled = true;
-  let stream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch (error) {
-    recordButton.disabled = false;
-    setStatus("The microphone is blocked. Allow it in your browser, or type your entry.", true);
-    return;
-  }
-  recordButton.disabled = false;
-
-  const mimeType = pickMimeType();
-  if (mimeType) {
-    recorder = new MediaRecorder(stream, { mimeType: mimeType });
-  } else {
-    recorder = new MediaRecorder(stream);
-  }
-  recordedChunks = [];
-
-  recorder.addEventListener("dataavailable", function (event) {
-    if (event.data.size > 0) {
-      recordedChunks.push(event.data);
-    }
-  });
-
-  recorder.addEventListener("stop", function () {
-    stream.getTracks().forEach(function (track) {
-      track.stop();
-    });
-    sendRecording(recorder.mimeType);
-  });
-
-  recorder.start();
-  recordButton.textContent = "Stop";
-  recordButton.classList.add("recording");
-  setStatus("Listening... press Stop when you finish.", false);
-  stopTimer = setTimeout(stopRecording, 30000);
-}
-
-function stopRecording() {
-  clearTimeout(stopTimer);
-  if (recorder && recorder.state === "recording") {
-    recorder.stop();
-  }
-  recordButton.textContent = "Record";
-  recordButton.classList.remove("recording");
-}
-
-async function sendRecording(mimeType) {
-  const type = mimeType || "audio/webm";
-  const extension = type.split("/")[1].split(";")[0];
-  const blob = new Blob(recordedChunks, { type: type });
-  const formData = new FormData();
-  formData.append("audio", blob, "voice." + extension);
-
-  recordButton.disabled = true;
-  setStatus("Listening to your recording...", false);
-  try {
-    const response = await fetch("/api/transcribe", { method: "POST", body: formData });
-    const servedBy = response.headers.get("X-Served-By");
-    if (servedBy) {
-      serverName.textContent = servedBy;
-    }
-    const data = await response.json();
-    if (!response.ok) {
-      setStatus(data.error || "Something went wrong.", true);
-    } else {
-      entryText.value = data.text;
-      parseButton.click();
-    }
-  } catch (error) {
-    setStatus("Could not reach the server. You can type your entry instead.", true);
-  }
-  recordButton.disabled = false;
-}
-
 recordButton.addEventListener("click", function () {
   if (recorder && recorder.state === "recording") {
     stopRecording();
@@ -467,8 +629,12 @@ recordButton.addEventListener("click", function () {
   }
 });
 
+searchBox.addEventListener("input", renderLedger);
+filterType.addEventListener("change", renderLedger);
+filterPaid.addEventListener("change", renderLedger);
+sortBy.addEventListener("change", renderLedger);
 
-
+// ---------- start ----------
 loadData();
 showScreen();
 renderAll();
