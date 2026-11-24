@@ -3,7 +3,7 @@
 **Semawin** is a voice-powered business ledger for African market traders, small shops and farmers. You say or type what happened ("Mama Ngozi took 2 trays of eggs on credit at 5k each"), the app turns it into a clean entry, you confirm it, and Semawin works out your revenue, cost of goods, profit and who still owes you.
 
 - **Live app:** https://semawin.luckyumoka.tech
-- **Demo video (2 min):** 
+- **Demo video (2 min):** https://youtu.be/oKrsz4QNYkQ 
 - **Repository:** https://github.com/Lucky-Umoka/semawin
 
 ## Why I built it
@@ -12,7 +12,7 @@ Many small traders keep their records in their head or on loose paper, so they d
 
 ## Features
 
-- **Speak or type** an entry. Voice is turned into text with Groq Whisper, then an LLM turns the sentence into a structured entry (type, item, quantity, unit price, customer, paid or not).
+- **Speak or type** an entry. Voice is turned into text with Groq API Whisper, then an LLM turns the sentence into a structured entry (type, item, quantity, unit price, customer, paid or not).
 - **Confirm before saving.** The parsed entry shows in an editable card. Nothing is saved until the user presses Save, so mistakes can be fixed.
 - **Profit tracking:** revenue, cost of goods, gross profit, expenses, net profit, and profit per item (simple bar chart).
 - **Unpaid credit tracking:** total owed, owed per customer, and a "Mark paid" button.
@@ -217,7 +217,7 @@ The `server` value alternates between `6385-web-01` and `6385-web-02`. If one se
 - CSV export prefixes cells that start with `=`, `+`, `-` or `@` so spreadsheets do not run them as formulas. CSV import checks every row and tells the user how many were skipped.
 
 ## Challenges I faced
-
+- **No VSCODE.** My laptop is bad and can't run VSCODE locally, so I had to find alternatives for writing my codes.
 - **No Codespace.** I ran out of my monthly Codespace hours, so I worked in a school Linux sandbox and edited through a VS Code tunnel in the browser, committing to GitHub from there.
 - **Whisper on silence.** It returned made-up text for silent recordings. I added a minimum audio size and a filter for these phantom phrases.
 - **Microphone needs https.** Browsers only allow the mic on secure pages. I used `localhost` while developing, then set up a real SSL certificate for the deployed site.
